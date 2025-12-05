@@ -471,7 +471,7 @@ get_header();
 
                     <!-- DISCLAIMER -->
                     <div style="padding: 15px; background-color: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; color: #0f172a; font-size: 12px; line-height: 1.5; text-align: justify;">
-                        <strong>Lưu ý:</strong> Kết quả này được tạo ra dựa trên thông tin quý phụ huynh cung cấp và chỉ mang tính chất tham khảo sàng lọc. Đây không phải là chẩn đoán y khoa chính thức. Vui lòng tham khảo ý kiến bác sĩ chuyên khoa để có phác đồ điều trị chính xác nhất.
+                        <strong>Lưu ý:</strong> Kết quả này được tạo ra dựa trên thông tin quý phụ huynh cung cấp và chỉ mang tính chất tham khảo. Đây không phải là chẩn đoán y khoa chính thức. Vui lòng tham khảo ý kiến bác sĩ chuyên khoa để có phác đồ điều trị chính xác nhất.
                     </div>
                 </div>
 
@@ -674,7 +674,7 @@ get_header();
 
                                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-[11px] text-slate-700 leading-relaxed font-medium text-justify">
                                             <strong className="block mb-1 text-slate-900 uppercase tracking-wide text-[10px]">Lưu ý:</strong>
-                                            Kết quả đánh giá này được xây dựng dựa trên các thuật toán sàng lọc sơ bộ và thông tin quý phụ huynh cung cấp. Đây <strong>không phải là chẩn đoán y khoa</strong> và không có giá trị thay thế cho việc thăm khám, tư vấn trực tiếp từ bác sĩ hoặc chuyên gia y tế. Vui lòng liên hệ với cơ sở y tế gần nhất để có kết luận chính xác nhất về tình trạng sức khỏe của bé.
+                                            Kết quả này được tạo ra dựa trên thông tin quý phụ huynh cung cấp và chỉ mang tính chất tham khảo. Đây không phải là chẩn đoán y khoa chính thức. Vui lòng tham khảo ý kiến bác sĩ chuyên khoa để có phác đồ điều trị chính xác nhất.
                                         </div>
                                     </section>
                             </div>
