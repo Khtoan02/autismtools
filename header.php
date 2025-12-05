@@ -8,38 +8,47 @@
 <html <?php language_attributes(); ?>>
 <head>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<?php wp_head(); ?>
 </head>
-<body <?php body_class(); ?>>
+<body <?php body_class( 'text-slate-800 flex flex-col min-h-screen' ); ?>>
 <?php wp_body_open(); ?>
-<div class="site">
-	<header class="site-header">
-		<div class="site-branding">
-			<?php
-			if ( has_custom_logo() ) {
-				the_custom_logo();
-			} else {
-				?>
-				<a href="<?php echo esc_url( home_url( '/' ) ); ?>">
-					<?php bloginfo( 'name' ); ?>
-				</a>
-				<p><?php bloginfo( 'description' ); ?></p>
-				<?php
-			}
-			?>
-		</div>
-		<nav class="site-nav" aria-label="<?php esc_attr_e( 'Menu chính', 'autismtools' ); ?>">
-			<?php
-			wp_nav_menu(
-				array(
-					'theme_location' => 'primary',
-					'menu_class'     => 'menu',
-					'container'      => false,
-				)
-			);
-			?>
-		</nav>
-	</header>
-	<main class="site-main">
 
+<div class="text-slate-800 flex flex-col min-h-screen">
+	<header class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+			<div class="flex justify-between items-center h-16">
+				<div class="flex items-center gap-2 cursor-pointer" onclick="window.location.href='<?php echo esc_url( home_url( '/' ) ); ?>';">
+					<?php
+					if ( has_custom_logo() ) {
+						the_custom_logo();
+					} else {
+						?>
+						<i data-lucide="brain-circuit" class="h-8 w-8 text-blue-600"></i>
+						<span class="text-xl font-bold text-slate-900">DawnBridge <span class="text-blue-600">Autism Care</span></span>
+						<?php
+					}
+					?>
+				</div>
+				<nav class="hidden md:flex space-x-8">
+					<?php
+					if ( has_nav_menu( 'primary' ) ) {
+						wp_nav_menu(
+							array(
+								'theme_location' => 'primary',
+								'menu_class'     => 'flex space-x-8',
+								'container'      => false,
+								'fallback_cb'    => false,
+							)
+						);
+					} else {
+						autismtools_fallback_menu();
+					}
+					?>
+				</nav>
+				<button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium shadow-md">
+					Đóng góp tài liệu
+				</button>
+			</div>
+		</div>
+	</header>
