@@ -46,8 +46,26 @@
 					}
 					?>
 				</nav>
-				<button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium shadow-md">
-					Đóng góp tài liệu
+				<?php
+				$articles_page_id = get_option( 'page_for_posts' );
+				if ( ! $articles_page_id ) {
+					$articles_page = get_posts(
+						array(
+							'post_type'      => 'page',
+							'meta_key'       => '_wp_page_template',
+							'meta_value'     => 'template-articles.php',
+							'posts_per_page' => 1,
+							'fields'         => 'ids',
+						)
+					);
+					if ( ! empty( $articles_page ) ) {
+						$articles_page_id = $articles_page[0];
+					}
+				}
+				$articles_url = $articles_page_id ? get_permalink( $articles_page_id ) : home_url( '/bai-viet/' );
+				?>
+				<button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium shadow-md" onclick="window.location.href='<?php echo esc_url( $articles_url ); ?>';">
+					Bài viết chia sẻ
 				</button>
 			</div>
 		</div>
