@@ -1,9 +1,14 @@
 <?php
 /**
- * Template Name: Check List tiêu hóa chính  thức
+ * Template Name: Check list
  *
  * @package AutismTools
  */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 get_header();
 ?>
 <head>
@@ -11,10 +16,10 @@ get_header();
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Checklist Tiêu Hoá (HQ Export) - DawnBridge</title>
     
-    <!-- React & ReactDOM -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- React & ReactDOM (đổi CDN tránh CORS) -->
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
     
     <!-- Html2Canvas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -71,7 +76,17 @@ get_header();
 <div id="root"></div>
 <div id="print-container"></div>
 
-<script type="text/babel">
+<!-- Babel standalone cần preset để biên dịch JSX, nếu thiếu sẽ không chạy và trang trắng -->
+<script>
+    // Debug: kiểm tra React có tải được không
+    (function() {
+        if (!window.React || !window.ReactDOM) {
+            console.error("React/ReactDOM chưa được tải. Kiểm tra kết nối CDN hoặc chặn CORS.");
+        }
+    })();
+</script>
+
+<script type="text/babel" data-presets="env,react">
     const { useState, useMemo, useEffect, useRef } = React;
     const apiKey = "AIzaSyDnAXGfKUs77MJ4cMuMy51otSGHj4WBQB0"; 
 

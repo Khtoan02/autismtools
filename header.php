@@ -47,26 +47,19 @@
 					?>
 				</nav>
 				<?php
-				$articles_page_id = get_option( 'page_for_posts' );
-				if ( ! $articles_page_id ) {
-					$articles_page = get_posts(
-						array(
-							'post_type'      => 'page',
-							'meta_key'       => '_wp_page_template',
-							'meta_value'     => 'template-articles.php',
-							'posts_per_page' => 1,
-							'fields'         => 'ids',
-						)
-					);
-					if ( ! empty( $articles_page ) ) {
-						$articles_page_id = $articles_page[0];
-					}
-				}
-				$articles_url = $articles_page_id ? get_permalink( $articles_page_id ) : home_url( '/bai-viet/' );
+				// Lấy trang đang sử dụng template bài viết để gắn link cho nút.
+				$articles_page     = get_pages(
+					array(
+						'meta_key'   => '_wp_page_template',
+						'meta_value' => 'template-articles.php',
+						'number'     => 1,
+					)
+				);
+				$articles_page_url = ! empty( $articles_page ) ? get_permalink( $articles_page[0]->ID ) : home_url( '/' );
 				?>
-				<button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium shadow-md" onclick="window.location.href='<?php echo esc_url( $articles_url ); ?>';">
+				<a href="<?php echo esc_url( $articles_page_url ); ?>" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium shadow-md">
 					Bài viết chia sẻ
-				</button>
+				</a>
 			</div>
 		</div>
 	</header>
