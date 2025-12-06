@@ -80,16 +80,38 @@ get_header();
 <script>
     // Debug: kiểm tra React có tải được không
     (function() {
-        if (!window.React || !window.ReactDOM) {
-            console.error("React/ReactDOM chưa được tải. Kiểm tra kết nối CDN hoặc chặn CORS.");
-        }
+        // React check removed
     })();
 </script>
 
 <script type="text/babel" data-presets="env,react">
     const { useState, useMemo, useEffect, useRef } = React;
-    const apiKey = "AIzaSyDnAXGfKUs77MJ4cMuMy51otSGHj4WBQB0"; 
-
+    const apiKey = "AIzaSyAS4gZ3LT2deg2XpwxtsREOfv3QG49FXUM";
+    
+    // --- TRACKING SYSTEM ---
+    const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const pageLoadTime = Date.now();
+    
+    // Function để gửi tracking event
+    const trackEvent = async (eventType, data = {}) => {
+        try {
+            await fetch('<?php echo esc_url( rest_url( 'autismtools/v1/checklist/tracking' ) ); ?>', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    event_type: eventType,
+                    session_id: sessionId,
+                    timestamp: Math.floor(Date.now() / 1000),
+                    data: data
+                })
+            });
+        } catch (err) {
+            // Tracking error silently
+        }
+    };
+    
     // --- DATA ---
     const SECTIONS = [
         { id: 'g1', title: 'TIÊU HOÁ & ĐI NGOÀI', icon: '🚽', questions: ['Bé đi ngoài không đều (2–3 ngày mới đi hoặc đi nhiều lần bất thường)', 'Phân cứng/vón cục hoặc lỏng/nát kéo dài', 'Bé ôm bụng, cong người, khó chịu trước khi đi tiêu', 'Sau khi đi ngoài, bé cáu gắt hoặc mệt lử'] },
@@ -123,21 +145,128 @@ get_header();
         Alert: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
     };
 
-    async function callGemini(prompt) {
-        if (!apiKey) return null;
+    // Fallback messages theo mức độ
+    const fallbackMessages = {
+        mild: "Bé có dấu hiệu rối loạn tiêu hoá nhẹ như táo bón/tiêu lỏng không ổn định. Những dấu hiệu này thường chưa ảnh hưởng sâu đến hành vi – năng lượng, nhưng nếu kéo dài sẽ gây khó chịu, biếng ăn và giấc ngủ kém.",
+        moderate: "Kết quả cho thấy bé đang: ăn nhưng hấp thu chưa tốt, dễ mệt, khó tập trung, bụng khó chịu sau ăn, tăng cân chậm. Đây là nhóm trẻ rất cần cải thiện dinh dưỡng để nâng năng lượng, giảm mệt mỏi và ổn định hành vi.",
+        severe: "Bé đang có dấu hiệu: đầy bụng – xì hơi nhiều, ngủ kém, dễ kích động – nhạy cảm, phản ứng xấu với sữa bò, rối loạn tiêu hoá kéo dài. Đây là nhóm nặng, cần hỗ trợ cá nhân hoá để phục hồi hệ vi sinh và giảm kích thích ruột–não."
+    };
+
+    async function callGemini(prompt, level = 'moderate') {
+        if (!apiKey) {
+            return { summary: fallbackMessages[level] || fallbackMessages.moderate };
+        }
+        
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
                 {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
+                    headers: { 
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": apiKey
+                    },
+                    body: JSON.stringify({ 
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { 
+                            responseMimeType: "application/json",
+                            temperature: 0.7,
+                            topP: 0.8,
+                            topK: 40
+                        } 
+                    }),
                 }
             );
-            if (!response.ok) return null;
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                let errorData = null;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (e) {
+                    errorData = { message: errorText };
+                }
+                
+                // Nếu là 429 (quota exceeded), thử retry sau một chút
+                if (response.status === 429 && errorData.error?.details) {
+                    const retryInfo = errorData.error.details.find(d => d['@type'] === 'type.googleapis.com/google.rpc.RetryInfo');
+                    if (retryInfo && retryInfo.retryDelay) {
+                        const delaySeconds = parseInt(retryInfo.retryDelay.replace('s', '')) || 7;
+                        await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+                        
+                        // Retry một lần nữa
+                        const retryResponse = await fetch(
+                            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+                            {
+                                method: "POST",
+                                headers: { 
+                                    "Content-Type": "application/json",
+                                    "x-goog-api-key": apiKey
+                                },
+                                body: JSON.stringify({ 
+                                    contents: [{ parts: [{ text: prompt }] }],
+                                    generationConfig: { 
+                                        responseMimeType: "application/json",
+                                        temperature: 0.7,
+                                        topP: 0.8,
+                                        topK: 40
+                                    } 
+                                }),
+                            }
+                        );
+                        
+                        if (retryResponse.ok) {
+                            const retryData = await retryResponse.json();
+                            return parseGeminiResponse(retryData, level);
+                        }
+                    }
+                }
+                
+                // Nếu vẫn fail, trả về fallback message
+                return { summary: fallbackMessages[level] || fallbackMessages.moderate };
+            }
+            
             const data = await response.json();
-            return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
-        } catch (error) { console.error("AI Error:", error); return null; }
+            
+            return parseGeminiResponse(data, level);
+            
+        } catch (error) { 
+            // Trả về fallback message nếu có lỗi
+            return { summary: fallbackMessages[level] || fallbackMessages.moderate };
+        }
+    }
+    
+    function parseGeminiResponse(data, level) {
+        // Kiểm tra response structure
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
+            return { summary: fallbackMessages[level] || fallbackMessages.moderate };
+        }
+        
+        const textContent = data.candidates[0].content.parts[0].text;
+        if (!textContent) {
+            return { summary: fallbackMessages[level] || fallbackMessages.moderate };
+        }
+        
+        // Parse JSON từ response
+        try {
+            // Loại bỏ markdown code blocks nếu có
+            let cleanText = textContent.trim();
+            if (cleanText.startsWith('```json')) {
+                cleanText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            } else if (cleanText.startsWith('```')) {
+                cleanText = cleanText.replace(/```\n?/g, '').trim();
+            }
+            
+            const parsed = JSON.parse(cleanText);
+            if (parsed.summary) {
+                return parsed;
+            } else {
+                return { summary: textContent };
+            }
+        } catch (parseError) {
+            // Nếu không parse được JSON, dùng textContent trực tiếp
+            return { summary: textContent };
+        }
     }
 
     function SectionCard({ section, status, onSetStatus, answers, onAnswer }) {
@@ -260,6 +389,12 @@ get_header();
         const [parentName, setParentName] = useState('');
         const [phone, setPhone] = useState('');
         const [isSaving, setIsSaving] = useState(false);
+        const sectionStartTimes = useRef({});
+        
+        // Track page view khi component mount
+        useEffect(() => {
+            trackEvent('page_view', { load_time: pageLoadTime });
+        }, []);
 
         const result = useMemo(() => {
             let total = 0, oftenCount = 0, g1 = 0, g2 = 0, g3 = 0, answered = 0;
@@ -344,14 +479,38 @@ get_header();
         const currentArticle = ARTICLES[result.level];
 
         const handleSetStatus = (sId, status) => {
-            setGroupStatuses(prev => ({ ...prev, [sId]: status }));
-            if (status === 'skipped') {
-                setAnswers(prev => {
-                    const next = { ...prev };
-                    Object.keys(next).forEach(k => { if (k.startsWith(sId)) delete next[k]; });
-                    return next;
-                });
-            }
+            setGroupStatuses(prev => {
+                const newStatuses = { ...prev, [sId]: status };
+                
+                // Tracking: Khi bắt đầu một section
+                if (status === 'active') {
+                    sectionStartTimes.current[sId] = Date.now();
+                    trackEvent(sId + '_start', { section: sId });
+                    // Tracking: Bắt đầu checklist (chỉ track lần đầu khi bắt đầu G1)
+                    if (sId === 'g1' && prev.g1 === 'pending') {
+                        trackEvent('start', { section: 'g1' });
+                    }
+                }
+                
+                // Tracking: Khi hoàn thành một section
+                if (status === 'completed') {
+                    const startTime = sectionStartTimes.current[sId];
+                    const duration = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+                    trackEvent(sId + '_complete', { section: sId, duration: duration });
+                }
+                
+                // Tracking: Khi skip một section
+                if (status === 'skipped') {
+                    trackEvent(sId + '_skipped', { section: sId });
+                    setAnswers(prevAnswers => {
+                        const next = { ...prevAnswers };
+                        Object.keys(next).forEach(k => { if (k.startsWith(sId)) delete next[k]; });
+                        return next;
+                    });
+                }
+                
+                return newStatuses;
+            });
         };
         const handleAnswer = (sId, qIdx, val) => setAnswers(prev => ({ ...prev, [`${sId}_${qIdx}`]: val }));
         
@@ -359,16 +518,86 @@ get_header();
 
         const handleViewResult = () => {
             setShowResult(true);
+            
+            // Tracking: Xem kết quả
+            const totalTime = Math.floor((Date.now() - pageLoadTime) / 1000);
+            trackEvent('view_result', { 
+                total_time: totalTime,
+                level: result.level,
+                progress: result.progress
+            });
+            
             const currentHash = JSON.stringify(result.symptoms) + result.level;
             if (!aiAnalysis || currentHash !== lastAnalyzedHash) {
                 setAiAnalysis(null);
                 setLastAnalyzedHash(currentHash);
-                const prompt = `Dựa trên danh sách triệu chứng: "${result.symptoms.join(', ')}" và mức độ nguy cơ hiện tại là: "${currentData.title}" (Lưu ý: Nguy cơ được chia thành 3 mức: Thấp, Trung bình, Cao). Hãy đóng vai một chuyên gia dinh dưỡng và sức khoẻ tiêu hoá nhi khoa, phân tích và trả về kết quả dưới dạng JSON object (không Markdown) 1 trường là: "summary": Viết đoạn văn ngắn (tối đa 2 câu, khoảng 40 từ), ngôn ngữ gần gũi, dễ hiểu với phụ huynh, tránh dùng từ chuyên môn y khoa sâu (như trục não ruột). Tóm tắt tình trạng tiêu hoá của bé và giải thích nhẹ nhàng ảnh hưởng của nó tới sinh hoạt/hành vi của bé.`;
-                callGemini(prompt).then(res => { if (res) setAiAnalysis(res); else setLastAnalyzedHash(''); });
+                
+                // Tạo prompt rõ ràng hơn
+                const symptomsText = result.symptoms.length > 0 
+                    ? result.symptoms.join(', ') 
+                    : 'Không có triệu chứng được ghi nhận';
+                
+                const prompt = `Bạn là chuyên gia dinh dưỡng và sức khoẻ tiêu hoá nhi khoa. 
+
+Dựa trên thông tin sau:
+- Triệu chứng: ${symptomsText}
+- Mức độ nguy cơ: ${currentData.title} (${currentData.desc}) (Lưu ý: Nguy cơ được chia thành 3 mức: Thấp, Trung bình, Cao).
+Hãy phân tích và trả về kết quả dưới dạng JSON object (không Markdown) 1 trường là:
+{ "summary": Viết đoạn văn ngắn (tối đa 2 câu, khoảng 40 từ), ngôn ngữ gần gũi, dễ hiểu với phụ huynh, tránh dùng từ chuyên môn y khoa sâu (như trục não ruột). Tóm tắt tình trạng tiêu hoá của bé và giải thích nhẹ nhàng ảnh hưởng của nó tới sinh hoạt/hành vi của bé. Ngôn ngữ gần gũi, dễ hiểu với phụ huynh, tránh dùng từ chuyên môn y khoa sâu."}
+
+QUAN TRỌNG: Chỉ trả về JSON object thuần túy, KHÔNG có markdown, KHÔNG có code block, KHÔNG có text thừa. Chỉ trả về JSON.`;
+
+                // Gọi API với level để có fallback message phù hợp
+                callGemini(prompt, result.level).then(res => { 
+                    if (res && res.summary) {
+                        setAiAnalysis(res);
+                    } else {
+                        setLastAnalyzedHash(''); // Reset để có thể thử lại
+                        // Fallback message theo level
+                        setAiAnalysis({ 
+                            summary: fallbackMessages[result.level] || fallbackMessages.moderate
+                        });
+                    }
+                }).catch(err => {
+                    setLastAnalyzedHash('');
+                    // Fallback message theo level
+                    setAiAnalysis({ 
+                        summary: fallbackMessages[result.level] || fallbackMessages.moderate
+                    });
+                });
             }
         };
 
-        const handleCall = () => {
+        const handleCall = async () => {
+            // Lưu dữ liệu khi gọi điện
+            if (parentName && phone) {
+                try {
+                    await fetch('<?php echo esc_url( rest_url( 'autismtools/v1/checklist/save' ) ); ?>', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-WP-Nonce': '<?php echo wp_create_nonce( 'wp_rest' ); ?>'
+                        },
+                        body: JSON.stringify({
+                            parent_name: parentName,
+                            phone: phone,
+                            level: result.level,
+                            symptoms: result.symptoms,
+                            grouped_results: result.groupedResults,
+                            ai_summary: aiAnalysis ? aiAnalysis.summary : '',
+                            action: 'call'
+                        })
+                    });
+                    // Tracking: Gọi điện
+                    trackEvent('save_result', { 
+                        level: result.level,
+                        action: 'call',
+                        has_phone: !!phone
+                    });
+                } catch (err) {
+                    // Error handled silently
+                }
+            }
             window.location.href = "tel:0985391881";
         };
 
@@ -485,6 +714,36 @@ get_header();
             document.body.appendChild(captureContainer);
 
             try {
+                // Lưu dữ liệu lên server trước
+                try {
+                    const saveResponse = await fetch('<?php echo esc_url( rest_url( 'autismtools/v1/checklist/save' ) ); ?>', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-WP-Nonce': '<?php echo wp_create_nonce( 'wp_rest' ); ?>'
+                        },
+                        body: JSON.stringify({
+                            parent_name: parentName,
+                            phone: phone,
+                            level: result.level,
+                            symptoms: result.symptoms,
+                            grouped_results: result.groupedResults,
+                            ai_summary: aiAnalysis ? aiAnalysis.summary : '',
+                            action: 'save_image'
+                        })
+                    });
+                    
+                    if (saveResponse.ok) {
+                        // Tracking: Lưu kết quả
+                        trackEvent('save_result', { 
+                            level: result.level,
+                            has_phone: !!phone
+                        });
+                    }
+                } catch (apiErr) {
+                    // Error handled silently
+                }
+                
                 // High Quality Scale
                 const canvas = await html2canvas(captureContainer, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
                 const link = document.createElement('a');
