@@ -691,7 +691,7 @@ QUAN TRỌNG: Chỉ trả về JSON object thuần túy, KHÔNG có markdown, KH
 
                     <!-- AI ANALYSIS -->
                     <div style="margin-bottom: 30px;">
-                        <h3 style="font-size: 14px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Phân tích chuyên sâu</h3>
+                        <h3 style="font-size: 14px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Đánh giá sơ bộ</h3>
                         <div style="position: relative; padding: 25px; background-color: #fff; border-left: 6px solid ${capColor.icon}; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border-radius: 0 12px 12px 0;">
                             <p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0; font-style: italic;">"${aiText}"</p>
                             <div style="margin-top: 15px; font-size: 12px; font-weight: 700; color: ${capColor.text}; text-transform: uppercase;">— Hệ thống đánh giá tự động DawnBridge</div>
@@ -857,7 +857,7 @@ QUAN TRỌNG: Chỉ trả về JSON object thuần túy, KHÔNG có markdown, KH
 
                                     <section>
                                         <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                            <span className="w-8 h-0.5 bg-slate-300 rounded-full"></span> Đánh giá từ hệ thống
+                                            <span className="w-8 h-0.5 bg-slate-300 rounded-full"></span> Đánh giá ban đầu
                                         </h3>
                                         <div className={`p-6 rounded-2xl border-l-4 bg-white shadow-soft relative overflow-hidden ${currentData.border.replace('border-', 'border-l-')}`}>
                                             {aiAnalysis ? (

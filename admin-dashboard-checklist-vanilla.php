@@ -10,12 +10,28 @@
 	
 	// Đợi Chart.js và Lucide load xong
 	async function initDashboard() {
-		if (typeof Chart === 'undefined' || typeof lucide === 'undefined') {
+		const root = document.getElementById('dashboard-root');
+		if (!root) {
 			setTimeout(initDashboard, 100);
 			return;
 		}
 		
-		console.log('Dashboard đang khởi tạo...');
+		// Hiển thị loading message
+		root.innerHTML = '<div class="p-8 text-center"><div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div><p class="text-sm text-gray-500 mt-2">Đang tải dashboard...</p></div>';
+		
+		// Kiểm tra Chart.js
+		if (typeof Chart === 'undefined') {
+			setTimeout(initDashboard, 100);
+			return;
+		}
+		
+		// Kiểm tra Lucide (có thể là window.lucide hoặc lucide)
+		if (typeof lucide === 'undefined' && typeof window.lucide === 'undefined') {
+			setTimeout(initDashboard, 100);
+			return;
+		}
+		
+		// Dashboard đang khởi tạo
 		
 		// Lấy dữ liệu thực từ API
 		let dashboardData = {
@@ -34,7 +50,8 @@
 				completed: 0,
 				leads: 0,
 				severeRate: 0
-			}
+			},
+			behaviorStats: null
 		};
 		
 		try {
@@ -59,7 +76,7 @@
 				}
 			}
 			
-			// Lấy danh sách leads
+			// Lấy danh sách leads ban đầu (không filter)
 			const leadsResponse = await fetch('<?php echo esc_url( rest_url( 'autismtools/v1/checklist/leads' ) ); ?>?limit=50', {
 				headers: {
 					'X-WP-Nonce': '<?php echo wp_create_nonce( 'wp_rest' ); ?>'
@@ -71,7 +88,8 @@
 				dashboardData.recentLeads = leads.map(lead => ({
 					...lead,
 					phone: lead.phone ? lead.phone.replace(/(\d{3})\d{4}(\d{3})/, '$1***$2') : '',
-					date: lead.date || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+					date: lead.date || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+					status: lead.status || 'new'
 				}));
 			}
 			
@@ -91,15 +109,53 @@
 				};
 			}
 		} catch (error) {
-			console.error('Lỗi khi lấy dữ liệu:', error);
+			// Error handled silently
 		}
+		
+		// Đảm bảo recentLeads có giá trị mặc định
+		if (!dashboardData.recentLeads) {
+			dashboardData.recentLeads = [];
+		}
+		
+		// Store dashboardData globally
+		window.dashboardData = dashboardData;
 		
 		// Render Dashboard với dữ liệu thực
 		renderDashboard(dashboardData);
+		
+		// Khởi tạo Lucide icons sau khi render
+		if (typeof lucide !== 'undefined') {
+			setTimeout(function() {
+				lucide.createIcons();
+			}, 100);
+		}
 	}
 	
 	function renderDashboard(dashboardData) {
 		const root = document.getElementById('dashboard-root');
+		if (!root) {
+			setTimeout(function() {
+				renderDashboard(dashboardData);
+			}, 100);
+			return;
+		}
+		
+		// Đảm bảo dashboardData có đầy đủ thuộc tính
+		if (!dashboardData) {
+			dashboardData = {
+				recentLeads: [],
+				stats: { total: 0, completed: 0, leads: 0, severeRate: 0 },
+				riskDistribution: [],
+				funnelData: { labels: [], values: [] },
+				behaviorStats: null
+			};
+		}
+		
+		if (!dashboardData.recentLeads) {
+			dashboardData.recentLeads = [];
+		}
+		
+		try {
 		root.innerHTML = `
 			<style>
 				#dashboard-root, #dashboard-root *, #dashboard-root *::before, #dashboard-root *::after {
@@ -199,11 +255,39 @@
 					<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 						<div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
 							<div class="p-5 border-b border-gray-100 bg-gray-50/50">
-								<h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
-									<i data-lucide="user-check" class="w-5 h-5 text-teal-600"></i>
-									Leads Mới Nhất
-								</h2>
-								<p class="text-xs text-gray-500 mt-0.5">Dữ liệu từ form lưu ảnh & gọi điện</p>
+								<div class="flex justify-between items-center mb-4">
+									<div>
+										<h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
+											<i data-lucide="user-check" class="w-5 h-5 text-teal-600"></i>
+											Leads Mới Nhất
+										</h2>
+										<p class="text-xs text-gray-500 mt-0.5">Dữ liệu từ form lưu ảnh & gọi điện</p>
+									</div>
+								</div>
+								<!-- Search Box & Filter -->
+								<div class="flex gap-2">
+									<div class="flex-1 relative">
+										<i data-lucide="search" class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+										<input 
+											type="text" 
+											id="search-leads" 
+											placeholder="Tìm theo tên hoặc SĐT..." 
+											class="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+											oninput="handleSearchLeads()"
+										/>
+									</div>
+									<select 
+										id="filter-status" 
+										onchange="handleSearchLeads()"
+										class="px-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white cursor-pointer"
+									>
+										<option value="">Tất cả trạng thái</option>
+										<option value="new">Mới</option>
+										<option value="consulted">Đã tư vấn</option>
+										<option value="missed">Gọi nhỡ</option>
+										<option value="called_back">Đã gọi lại</option>
+									</select>
+								</div>
 							</div>
 							<div class="overflow-x-auto">
 								<table class="w-full text-sm text-left">
@@ -212,38 +296,54 @@
 											<th class="px-6 py-3 font-semibold">Phụ huynh / SĐT</th>
 											<th class="px-6 py-3 font-semibold">Bé / Nguy cơ</th>
 											<th class="px-6 py-3 font-semibold text-center">Hành động</th>
-											<th class="px-6 py-3 font-semibold text-right">Chi tiết</th>
+											<th class="px-6 py-3 font-semibold text-center">Trạng thái</th>
+											<th class="px-6 py-3 font-semibold text-right">Thao tác</th>
 										</tr>
 									</thead>
 									<tbody class="divide-y divide-gray-100" id="leads-tbody">
-										${dashboardData.recentLeads.length > 0 ? dashboardData.recentLeads.map(lead => `
-											<tr class="hover:bg-teal-50/30 transition-colors">
-												<td class="px-6 py-4">
-													<div class="font-bold text-gray-800">${lead.parent}</div>
-													<div class="text-xs text-gray-500">${lead.phone}</div>
-												</td>
-												<td class="px-6 py-4">
-													<div class="text-gray-700 font-medium">${lead.child || '-'}</div>
-													<span class="inline-flex mt-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-														lead.score === 'Nặng' ? 'bg-red-100 text-red-700' : 
+										${(dashboardData.recentLeads && Array.isArray(dashboardData.recentLeads) && dashboardData.recentLeads.length > 0) ? dashboardData.recentLeads.map(function(lead) {
+											const statusConfig = {
+												'new': { label: 'Mới', color: 'bg-blue-100 text-blue-700' },
+												'consulted': { label: 'Đã tư vấn', color: 'bg-green-100 text-green-700' },
+												'missed': { label: 'Gọi nhỡ', color: 'bg-orange-100 text-orange-700' },
+												'called_back': { label: 'Đã gọi lại', color: 'bg-purple-100 text-purple-700' }
+											};
+											const leadStatus = lead.status || 'new';
+											const status = statusConfig[leadStatus] || statusConfig['new'];
+											return '<tr class="hover:bg-teal-50/30 transition-colors">' +
+												'<td class="px-6 py-4">' +
+													'<div class="font-bold text-gray-800">' + (lead.parent || '') + '</div>' +
+													'<div class="text-xs text-gray-500">' + (lead.phone || '') + '</div>' +
+												'</td>' +
+												'<td class="px-6 py-4">' +
+													'<div class="text-gray-700 font-medium">' + (lead.child || '-') + '</div>' +
+													'<span class="inline-flex mt-1 px-2 py-0.5 rounded text-[10px] font-bold ' +
+														(lead.score === 'Nặng' ? 'bg-red-100 text-red-700' : 
 														lead.score === 'Trung Bình' ? 'bg-yellow-100 text-yellow-700' : 
-														'bg-green-100 text-green-700'
-													}">
-														${lead.score}
-													</span>
-												</td>
-												<td class="px-6 py-4 text-center">
-													<div class="flex items-center justify-center gap-1 text-xs text-gray-600 bg-gray-100 py-1 px-2 rounded border border-gray-200">
-														${lead.action}
-													</div>
-												</td>
-												<td class="px-6 py-4 text-right">
-													<button onclick="viewLeadDetail(${lead.id})" class="text-xs font-bold text-teal-600 hover:text-teal-800 flex items-center justify-end gap-1 ml-auto cursor-pointer">
-														<i data-lucide="eye" class="w-3 h-3"></i> Xem
-													</button>
-												</td>
-											</tr>
-										`).join('') : '<tr><td colspan="4" class="px-6 py-8 text-center text-gray-400 italic">Chưa có dữ liệu</td></tr>'}
+														'bg-green-100 text-green-700') + '">' +
+														(lead.score || '-') +
+													'</span>' +
+												'</td>' +
+												'<td class="px-6 py-4 text-center">' +
+													'<div class="flex items-center justify-center gap-1 text-xs text-gray-600 bg-gray-100 py-1 px-2 rounded border border-gray-200">' +
+														(lead.action || '-') +
+													'</div>' +
+												'</td>' +
+												'<td class="px-6 py-4 text-center">' +
+													'<select onchange="updateLeadStatus(' + lead.id + ', this.value)" class="text-xs font-bold px-3 py-1.5 rounded-full border-0 cursor-pointer transition-all ' + status.color + '" style="appearance: auto;">' +
+														'<option value="new"' + (leadStatus === 'new' ? ' selected' : '') + '>Mới</option>' +
+														'<option value="consulted"' + (leadStatus === 'consulted' ? ' selected' : '') + '>Đã tư vấn</option>' +
+														'<option value="missed"' + (leadStatus === 'missed' ? ' selected' : '') + '>Gọi nhỡ</option>' +
+														'<option value="called_back"' + (leadStatus === 'called_back' ? ' selected' : '') + '>Đã gọi lại</option>' +
+													'</select>' +
+												'</td>' +
+												'<td class="px-6 py-4 text-right">' +
+													'<button onclick="viewLeadDetail(' + lead.id + ')" class="text-xs font-bold text-teal-600 hover:text-teal-800 flex items-center justify-end gap-1 ml-auto cursor-pointer">' +
+														'<i data-lucide="eye" class="w-3 h-3"></i> Xem' +
+													'</button>' +
+												'</td>' +
+											'</tr>';
+										}).join('') : '<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400 italic">Chưa có dữ liệu</td></tr>'}
 									</tbody>
 								</table>
 							</div>
@@ -762,7 +862,9 @@
 			});
 		}
 		
-		console.log('Dashboard đã được khởi tạo!');
+		} catch (error) {
+			root.innerHTML = '<div class="p-8 text-center"><p class="text-red-600 font-bold mb-2">Lỗi khi render dashboard</p><p class="text-sm text-gray-500">' + (error.message || 'Unknown error') + '</p></div>';
+		}
 	}
 	
 	// Function để switch tab
@@ -958,7 +1060,7 @@
 			}
 			
 		} catch (error) {
-			console.error('Lỗi khi tải chi tiết:', error);
+			// Error handled silently
 			modalBody.innerHTML = `
 				<div class="text-center p-6">
 					<p class="text-red-600 font-bold mb-2">Lỗi khi tải dữ liệu</p>
@@ -973,6 +1075,147 @@
 		const modal = document.getElementById('leadDetailModal');
 		modal.classList.add('hidden');
 		modal.classList.remove('flex');
+	};
+	
+	// Function để load leads với search và filter
+	window.loadLeads = async function(searchTerm = '', statusFilter = '') {
+		try {
+			let url = '<?php echo esc_url( rest_url( 'autismtools/v1/checklist/leads' ) ); ?>?limit=50';
+			if (searchTerm && searchTerm.trim()) {
+				url += '&search=' + encodeURIComponent(searchTerm.trim());
+			}
+			if (statusFilter && statusFilter.trim()) {
+				url += '&status=' + encodeURIComponent(statusFilter.trim());
+			}
+			
+			const leadsResponse = await fetch(url, {
+				headers: {
+					'X-WP-Nonce': '<?php echo wp_create_nonce( 'wp_rest' ); ?>'
+				}
+			});
+			
+			if (leadsResponse.ok) {
+				const leads = await leadsResponse.json();
+				const leadsWithStatus = leads.map(lead => ({
+					...lead,
+					phone: lead.phone ? lead.phone.replace(/(\d{3})\d{4}(\d{3})/, '$1***$2') : '',
+					date: lead.date || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+					status: lead.status || 'new'
+				}));
+				
+				// Cập nhật dashboard data và re-render
+				if (window.dashboardData) {
+					window.dashboardData.recentLeads = leadsWithStatus;
+					updateLeadsTable(leadsWithStatus);
+				} else {
+					// Nếu chưa có dashboardData, tạo mới
+					window.dashboardData = { recentLeads: leadsWithStatus };
+					updateLeadsTable(leadsWithStatus);
+				}
+			}
+		} catch (error) {
+			// Error handled silently
+		}
+	};
+	
+	// Function để update leads table
+	window.updateLeadsTable = function(leads) {
+		const tbody = document.getElementById('leads-tbody');
+		if (!tbody) return;
+		
+		const statusConfig = {
+			'new': { label: 'Mới', color: 'bg-blue-100 text-blue-700' },
+			'consulted': { label: 'Đã tư vấn', color: 'bg-green-100 text-green-700' },
+			'missed': { label: 'Gọi nhỡ', color: 'bg-orange-100 text-orange-700' },
+			'called_back': { label: 'Đã gọi lại', color: 'bg-purple-100 text-purple-700' }
+		};
+		
+		if (leads.length === 0) {
+			tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-gray-400 italic">Không tìm thấy kết quả</td></tr>';
+			return;
+		}
+		
+		tbody.innerHTML = leads.map(lead => {
+			const status = statusConfig[lead.status] || statusConfig['new'];
+			return `
+				<tr class="hover:bg-teal-50/30 transition-colors">
+					<td class="px-6 py-4">
+						<div class="font-bold text-gray-800">${lead.parent}</div>
+						<div class="text-xs text-gray-500">${lead.phone}</div>
+					</td>
+					<td class="px-6 py-4">
+						<div class="text-gray-700 font-medium">${lead.child || '-'}</div>
+						<span class="inline-flex mt-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+							lead.score === 'Nặng' ? 'bg-red-100 text-red-700' : 
+							lead.score === 'Trung Bình' ? 'bg-yellow-100 text-yellow-700' : 
+							'bg-green-100 text-green-700'
+						}">
+							${lead.score}
+						</span>
+					</td>
+					<td class="px-6 py-4 text-center">
+						<div class="flex items-center justify-center gap-1 text-xs text-gray-600 bg-gray-100 py-1 px-2 rounded border border-gray-200">
+							${lead.action}
+						</div>
+					</td>
+					<td class="px-6 py-4 text-center">
+						<select 
+							onchange="updateLeadStatus(${lead.id}, this.value)" 
+							class="text-xs font-bold px-3 py-1.5 rounded-full border-0 cursor-pointer transition-all ${status.color}"
+							style="appearance: auto;"
+						>
+							<option value="new" ${lead.status === 'new' ? 'selected' : ''} class="bg-white text-gray-800">Mới</option>
+							<option value="consulted" ${lead.status === 'consulted' ? 'selected' : ''} class="bg-white text-gray-800">Đã tư vấn</option>
+							<option value="missed" ${lead.status === 'missed' ? 'selected' : ''} class="bg-white text-gray-800">Gọi nhỡ</option>
+							<option value="called_back" ${lead.status === 'called_back' ? 'selected' : ''} class="bg-white text-gray-800">Đã gọi lại</option>
+						</select>
+					</td>
+					<td class="px-6 py-4 text-right">
+						<button onclick="viewLeadDetail(${lead.id})" class="text-xs font-bold text-teal-600 hover:text-teal-800 flex items-center justify-end gap-1 ml-auto cursor-pointer">
+							<i data-lucide="eye" class="w-3 h-3"></i> Xem
+						</button>
+					</td>
+				</tr>
+			`;
+		}).join('');
+		
+		// Re-init icons
+		if (window.lucide) {
+			window.lucide.createIcons();
+		}
+	};
+	
+	// Function để search leads (real-time)
+	window.handleSearchLeads = function() {
+		const searchTerm = document.getElementById('search-leads')?.value || '';
+		const statusFilter = document.getElementById('filter-status')?.value || '';
+		loadLeads(searchTerm, statusFilter);
+	};
+	
+	// Function để update lead status
+	window.updateLeadStatus = async function(leadId, newStatus) {
+		try {
+			const response = await fetch('<?php echo esc_url( rest_url( 'autismtools/v1/checklist/update-status' ) ); ?>', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-WP-Nonce': '<?php echo wp_create_nonce( 'wp_rest' ); ?>'
+				},
+				body: JSON.stringify({
+					id: leadId,
+					status: newStatus
+				})
+			});
+			
+			if (response.ok) {
+				// Reload leads để cập nhật UI với filter hiện tại
+				const searchTerm = document.getElementById('search-leads')?.value || '';
+				const statusFilter = document.getElementById('filter-status')?.value || '';
+				await loadLeads(searchTerm, statusFilter);
+			}
+		} catch (error) {
+			// Error handled silently
+		}
 	};
 	
 	// Bắt đầu khởi tạo

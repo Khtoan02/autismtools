@@ -587,6 +587,14 @@ function autismtools_register_checklist_api() {
 			return current_user_can( 'manage_options' );
 		},
 	) );
+	
+	register_rest_route( 'autismtools/v1', '/checklist/update-status', array(
+		'methods' => 'POST',
+		'callback' => 'autismtools_update_checklist_status',
+		'permission_callback' => function() {
+			return current_user_can( 'manage_options' );
+		},
+	) );
 }
 add_action( 'rest_api_init', 'autismtools_register_checklist_api' );
 
@@ -648,6 +656,8 @@ function autismtools_get_checklist_stats( $request ) {
  */
 function autismtools_get_checklist_leads( $request ) {
 	$limit = absint( $request->get_param( 'limit' ) ?? 50 );
+	$search = sanitize_text_field( $request->get_param( 'search' ) ?? '' );
+	$status = sanitize_text_field( $request->get_param( 'status' ) ?? '' );
 	
 	$args = array(
 		'post_type' => 'checklist_result',
@@ -657,12 +667,80 @@ function autismtools_get_checklist_leads( $request ) {
 		'order' => 'DESC',
 	);
 	
+	// Thêm meta query nếu có search hoặc status
+	$meta_queries = array();
+	
+	// Thêm search query
+	if ( ! empty( $search ) ) {
+		$meta_queries[] = array(
+			'relation' => 'OR',
+			array(
+				'key' => 'parent_name',
+				'value' => $search,
+				'compare' => 'LIKE',
+			),
+			array(
+				'key' => 'phone',
+				'value' => $search,
+				'compare' => 'LIKE',
+			),
+		);
+	}
+	
+	// Thêm filter theo status
+	if ( ! empty( $status ) && in_array( $status, array( 'new', 'consulted', 'missed', 'called_back' ), true ) ) {
+		if ( $status === 'new' ) {
+			// Nếu filter theo 'new', tìm cả những posts không có status (mặc định là 'new')
+			$meta_queries[] = array(
+				'relation' => 'OR',
+				array(
+					'key' => 'status',
+					'value' => 'new',
+					'compare' => '=',
+				),
+				array(
+					'key' => 'status',
+					'compare' => 'NOT EXISTS',
+				),
+			);
+		} else {
+			// Các status khác thì tìm chính xác
+			$meta_queries[] = array(
+				'key' => 'status',
+				'value' => $status,
+				'compare' => '=',
+			);
+		}
+	}
+	
+	// Nếu có meta queries, thêm vào args
+	if ( ! empty( $meta_queries ) ) {
+		if ( count( $meta_queries ) === 1 ) {
+			// Chỉ có 1 query, dùng trực tiếp
+			$args['meta_query'] = $meta_queries[0];
+		} else {
+			// Có nhiều queries, cần relation AND
+			$args['meta_query'] = array(
+				'relation' => 'AND',
+			);
+			foreach ( $meta_queries as $mq ) {
+				$args['meta_query'][] = $mq;
+			}
+		}
+	}
+	
 	$query = new WP_Query( $args );
 	$leads = array();
 	
 	while ( $query->have_posts() ) {
 		$query->the_post();
 		$post_id = get_the_ID();
+		
+		$lead_status = get_post_meta( $post_id, 'status', true );
+		// Nếu không có status, mặc định là 'new'
+		if ( empty( $lead_status ) ) {
+			$lead_status = 'new';
+		}
 		
 		$leads[] = array(
 			'id' => $post_id,
@@ -672,16 +750,54 @@ function autismtools_get_checklist_leads( $request ) {
 			'score' => ucfirst( get_post_meta( $post_id, 'level', true ) === 'severe' ? 'Nặng' : ( get_post_meta( $post_id, 'level', true ) === 'moderate' ? 'Trung Bình' : 'Nhẹ' ) ),
 			'date' => get_the_date( 'H:i A' ),
 			'action' => get_post_meta( $post_id, 'action', true ) === 'call' ? 'Gọi điện' : 'Lưu Ảnh',
+			'status' => $lead_status,
 			'details' => array(
 				'symptoms' => get_post_meta( $post_id, 'symptoms', true ) ?: array(),
 				'ai_summary' => get_post_meta( $post_id, 'ai_summary', true ) ?: '',
-				'notes' => '',
+				'notes' => get_post_meta( $post_id, 'notes', true ) ?: '',
 			),
 		);
 	}
 	wp_reset_postdata();
 	
 	return new WP_REST_Response( $leads, 200 );
+}
+
+/**
+ * Cập nhật trạng thái checklist
+ */
+function autismtools_update_checklist_status( $request ) {
+	$params = $request->get_json_params();
+	
+	$post_id = absint( $params['id'] ?? 0 );
+	$status = sanitize_text_field( $params['status'] ?? '' );
+	$notes = sanitize_textarea_field( $params['notes'] ?? '' );
+	
+	if ( ! $post_id || empty( $status ) ) {
+		return new WP_Error( 'missing_data', 'Thiếu thông tin', array( 'status' => 400 ) );
+	}
+	
+	$valid_statuses = array( 'new', 'consulted', 'missed', 'called_back' );
+	if ( ! in_array( $status, $valid_statuses, true ) ) {
+		return new WP_Error( 'invalid_status', 'Trạng thái không hợp lệ', array( 'status' => 400 ) );
+	}
+	
+	$post = get_post( $post_id );
+	if ( ! $post || $post->post_type !== 'checklist_result' ) {
+		return new WP_Error( 'not_found', 'Không tìm thấy kết quả', array( 'status' => 404 ) );
+	}
+	
+	update_post_meta( $post_id, 'status', $status );
+	if ( ! empty( $notes ) ) {
+		update_post_meta( $post_id, 'notes', $notes );
+	}
+	
+	return new WP_REST_Response( array(
+		'success' => true,
+		'id' => $post_id,
+		'status' => $status,
+		'message' => 'Đã cập nhật trạng thái thành công',
+	), 200 );
 }
 
 /**
@@ -1181,7 +1297,7 @@ function autismtools_dashboard_admin_assets( $hook ) {
 		'https://unpkg.com/lucide@latest',
 		array(),
 		null,
-		true
+		false
 	);
 }
 add_action( 'admin_enqueue_scripts', 'autismtools_dashboard_admin_assets' );
